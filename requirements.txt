@@ -1,0 +1,8 @@
+Django>=4.0
+channels>=4.0
+aiortc>=1.0
+opencv-python-headless>=4.0
+torch>=1.9.0
+torchvision>=0.10.0
+ultralytics>=8.0.0
+numpy>=1.21.0

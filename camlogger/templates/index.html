@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Django WebRTC Logger</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        video { background: #000; margin-bottom: 10px; }
+        button { padding: 10px 15px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h1>Webcam Logger</h1>
+    <video id="localVideo" width="640" height="480" autoplay muted playsinline></video>
+    <br>
+    <button id="startButton">Start Streaming</button>
+    <button id="stopButton" disabled>Stop Streaming</button>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const localVideo = document.getElementById('localVideo');
+        let pc;
+        let ws;
+
+        startButton.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true,
+                    audio: false 
+                });
+                localVideo.srcObject = stream;
+                
+                // Connect to WebSocket
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                ws = new WebSocket(`${wsProtocol}${window.location.host}/ws/camlogger/`);
+                
+                pc = new RTCPeerConnection();
+                
+                // Add stream tracks to peer connection
+                stream.getTracks().forEach(track => pc.addTrack(track, stream));
+                
+                // Handle ICE candidates
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        ws.send(JSON.stringify({
+                            type: 'candidate',
+                            candidate: event.candidate
+                        }));
+                    }
+                };
+                
+                // Create offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({
+                        type: 'offer',
+                        sdp: offer.sdp
+                    }));
+                };
+                
+                // Handle messages from server
+                ws.onmessage = async (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'answer') {
+                        await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    } else if (data.type === 'candidate') {
+                        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    }
+                };
+                
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error accessing camera: ' + err.message);
+            }
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (ws) ws.close();
+            if (pc) pc.close();
+            if (localVideo.srcObject) {
+                localVideo.srcObject.getTracks().forEach(track => track.stop());
+                localVideo.srcObject = null;
+            }
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        });
+    </script>
+</body>
+</html>
